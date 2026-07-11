@@ -27,7 +27,7 @@ import java.util.Deque;
 
 public class PhantomBlockMod implements ClientModInitializer {
 
-    private static int ticksBetweenSteps = 2; // стартовое значение — подбирай командой /phantomdelay
+    private static int ticksBetweenSteps = 2;
     private static boolean debugMessages = false;
 
     public static boolean phantomEnabled = false;
@@ -131,11 +131,9 @@ public class PhantomBlockMod implements ClientModInitializer {
         ClientPlayNetworkHandler net = client.getNetworkHandler();
         if (player == null || net == null) return;
 
-        debug(client, "Шаг 1: свап в оффхенд");
-        pendingSteps.add(() -> swapHands(client, player, net));
-
-        debug(client, "Шаг 2: постановка блока");
         pendingSteps.add(() -> {
+            debug(client, "Шаг 1: F + постановка одновременно");
+            swapHands(client, player, net);
             if (client.interactionManager != null) {
                 client.interactionManager.interactBlock(player, Hand.OFF_HAND, hitResult);
                 player.swingHand(Hand.OFF_HAND);
@@ -143,12 +141,12 @@ public class PhantomBlockMod implements ClientModInitializer {
         });
 
         pendingSteps.add(() -> {
-            debug(client, "Шаг 3: свап обратно");
+            debug(client, "Шаг 2: F номер 1 после постановки");
             swapHands(client, player, net);
         });
 
         pendingSteps.add(() -> {
-            debug(client, "Шаг 4: свап ещё раз");
+            debug(client, "Шаг 3: F номер 2 после постановки");
             swapHands(client, player, net);
         });
     }
