@@ -30,7 +30,7 @@ public class PhantomBlockMod implements ClientModInitializer {
     public static boolean phantomEnabled = false;
 
     private static final KeyBinding.Category CATEGORY =
-            KeyBinding.Category.register(Identifier.of("phantomblock", "phantom_category"));
+            KeyBinding.Category.create(Identifier.of("phantomblock", "phantom_category"));
 
     private static KeyBinding toggleKey;
 
