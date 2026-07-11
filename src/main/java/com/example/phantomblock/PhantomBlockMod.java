@@ -1,6 +1,8 @@
 package com.example.phantomblock;
 
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
@@ -25,7 +27,8 @@ import java.util.Deque;
 
 public class PhantomBlockMod implements ClientModInitializer {
 
-    private static final int TICKS_BETWEEN_STEPS = 0; // поставь 1-2 если не срабатывает стабильно
+    private static int ticksBetweenSteps = 2; // стартовое значение — подбирай командой /phantomdelay
+    private static boolean debugMessages = false;
 
     public static boolean phantomEnabled = false;
 
@@ -33,6 +36,7 @@ public class PhantomBlockMod implements ClientModInitializer {
             KeyBinding.Category.create(Identifier.of("phantomblock", "phantom_category"));
 
     private static KeyBinding toggleKey;
+    private static KeyBinding resetKey;
 
     private final Deque<Runnable> pendingSteps = new ArrayDeque<>();
     private int waitTicks = 0;
@@ -46,6 +50,32 @@ public class PhantomBlockMod implements ClientModInitializer {
                 CATEGORY
         ));
 
+        resetKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.phantomblock.reset",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_SEMICOLON,
+                CATEGORY
+        ));
+
+        ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
+            dispatcher.register(ClientCommandManager.literal("phantomdelay")
+                    .then(ClientCommandManager.argument("ticks", com.mojang.brigadier.arguments.IntegerArgumentType.integer(0, 20))
+                            .executes(ctx -> {
+                                ticksBetweenSteps = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "ticks");
+                                MinecraftClient.getInstance().player.sendMessage(
+                                        Text.literal("Задержка между шагами: " + ticksBetweenSteps + " тик(ов)"), false);
+                                return 1;
+                            })));
+
+            dispatcher.register(ClientCommandManager.literal("phantomdebug")
+                    .executes(ctx -> {
+                        debugMessages = !debugMessages;
+                        MinecraftClient.getInstance().player.sendMessage(
+                                Text.literal("Debug-сообщения: " + (debugMessages ? "ВКЛ" : "ВЫКЛ")), false);
+                        return 1;
+                    }));
+        });
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (toggleKey.wasPressed()) {
                 phantomEnabled = !phantomEnabled;
@@ -57,12 +87,20 @@ public class PhantomBlockMod implements ClientModInitializer {
                 }
             }
 
+            while (resetKey.wasPressed()) {
+                if (client.player != null && client.getNetworkHandler() != null) {
+                    pendingSteps.clear();
+                    swapHands(client, client.player, client.getNetworkHandler());
+                    client.player.sendMessage(Text.literal("§eРучной свап рук выполнен"), true);
+                }
+            }
+
             if (waitTicks > 0) {
                 waitTicks--;
             } else if (!pendingSteps.isEmpty()) {
                 Runnable step = pendingSteps.poll();
                 step.run();
-                waitTicks = TICKS_BETWEEN_STEPS;
+                waitTicks = ticksBetweenSteps;
             }
         });
 
@@ -93,8 +131,10 @@ public class PhantomBlockMod implements ClientModInitializer {
         ClientPlayNetworkHandler net = client.getNetworkHandler();
         if (player == null || net == null) return;
 
+        debug(client, "Шаг 1: свап в оффхенд");
         pendingSteps.add(() -> swapHands(client, player, net));
 
+        debug(client, "Шаг 2: постановка блока");
         pendingSteps.add(() -> {
             if (client.interactionManager != null) {
                 client.interactionManager.interactBlock(player, Hand.OFF_HAND, hitResult);
@@ -102,8 +142,21 @@ public class PhantomBlockMod implements ClientModInitializer {
             }
         });
 
-        pendingSteps.add(() -> swapHands(client, player, net));
-        pendingSteps.add(() -> swapHands(client, player, net));
+        pendingSteps.add(() -> {
+            debug(client, "Шаг 3: свап обратно");
+            swapHands(client, player, net);
+        });
+
+        pendingSteps.add(() -> {
+            debug(client, "Шаг 4: свап ещё раз");
+            swapHands(client, player, net);
+        });
+    }
+
+    private void debug(MinecraftClient client, String msg) {
+        if (debugMessages && client.player != null) {
+            client.player.sendMessage(Text.literal("§7[phantom] " + msg), true);
+        }
     }
 
     private void swapHands(MinecraftClient client, ClientPlayerEntity player, ClientPlayNetworkHandler net) {
